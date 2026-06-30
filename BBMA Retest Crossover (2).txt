@@ -1,0 +1,841 @@
+//+------------------------------------------------------------------+
+//|                 BBMA_RetestCrossover.mq5                         |
+//|          BBMA Retest Crossover + Telegram Alerts                 |
+//+------------------------------------------------------------------+
+
+#property copyright "BBMA Alerts"
+#property version   "1.00"
+#property strict
+
+#property indicator_chart_window
+
+
+
+//==================================================
+// Inputs
+//==================================================
+
+
+input int LWMA_High5_Period  = 5;
+input int LWMA_High10_Period = 10;
+
+
+input int LWMA_Low5_Period   = 5;
+input int LWMA_Low10_Period  = 10;
+
+
+
+// Rectangle
+
+input int RectangleForwardCandles = 4;
+
+input int RectangleLifeDays = 2;
+
+
+
+// Telegram
+
+input bool EnableTelegram = true;
+
+
+input string TelegramBotToken =
+"ENTER_BOT_TOKEN";
+
+
+input string TelegramChatID =
+"ENTER_CHAT_ID";
+
+
+
+
+//==================================================
+// Handles
+//==================================================
+
+
+int High5Handle;
+int High10Handle;
+
+
+int Low5Handle;
+int Low10Handle;
+
+
+
+
+//==================================================
+// State Memory
+//==================================================
+
+
+bool BuyRetestFound=false;
+
+bool SellRetestFound=false;
+
+
+
+bool BuyCrossover=false;
+
+bool SellCrossover=false;
+
+
+
+datetime LastBuyCross=0;
+
+datetime LastSellCross=0;
+
+
+
+
+
+//==================================================
+// Initialization
+//==================================================
+
+int OnInit()
+{
+
+
+High5Handle=iMA(
+_Symbol,
+_Period,
+LWMA_High5_Period,
+0,
+MODE_LWMA,
+PRICE_HIGH
+);
+
+
+
+High10Handle=iMA(
+_Symbol,
+_Period,
+LWMA_High10_Period,
+0,
+MODE_LWMA,
+PRICE_HIGH
+);
+
+
+
+Low5Handle=iMA(
+_Symbol,
+_Period,
+LWMA_Low5_Period,
+0,
+MODE_LWMA,
+PRICE_LOW
+);
+
+
+
+Low10Handle=iMA(
+_Symbol,
+_Period,
+LWMA_Low10_Period,
+0,
+MODE_LWMA,
+PRICE_LOW
+);
+
+
+
+
+if(High5Handle==INVALID_HANDLE ||
+High10Handle==INVALID_HANDLE ||
+Low5Handle==INVALID_HANDLE ||
+Low10Handle==INVALID_HANDLE)
+{
+return(INIT_FAILED);
+}
+
+
+return(INIT_SUCCEEDED);
+
+}
+//==================================================
+// Main Calculation
+//==================================================
+
+int OnCalculate(
+
+const int rates_total,
+const int prev_calculated,
+
+const datetime &time[],
+const double &open[],
+const double &high[],
+const double &low[],
+const double &close[],
+
+const long &tick_volume[],
+const long &volume[],
+const int &spread[]
+
+)
+{
+
+
+if(rates_total < 50)
+   return 0;
+
+
+
+ArraySetAsSeries(time,true);
+ArraySetAsSeries(open,true);
+ArraySetAsSeries(high,true);
+ArraySetAsSeries(low,true);
+ArraySetAsSeries(close,true);
+
+
+
+double High5[];
+double High10[];
+
+double Low5[];
+double Low10[];
+
+
+
+ArraySetAsSeries(High5,true);
+ArraySetAsSeries(High10,true);
+
+ArraySetAsSeries(Low5,true);
+ArraySetAsSeries(Low10,true);
+
+
+
+CopyBuffer(
+High5Handle,
+0,
+0,
+rates_total,
+High5
+);
+
+
+
+CopyBuffer(
+High10Handle,
+0,
+0,
+rates_total,
+High10
+);
+
+
+
+CopyBuffer(
+Low5Handle,
+0,
+0,
+rates_total,
+Low5
+);
+
+
+
+CopyBuffer(
+Low10Handle,
+0,
+0,
+rates_total,
+Low10
+);
+
+
+
+int i=1;
+
+
+
+
+//==================================================
+// Detect Retest Status
+//
+// This file waits for Retest conditions
+// generated after Buy/Sell signals
+//==================================================
+
+
+
+// Buy Retest detection
+
+if(low[i]<=Low5[i] &&
+   high[i]>=Low5[i])
+{
+
+   BuyRetestFound=true;
+
+}
+
+
+
+
+// Sell Retest detection
+
+if(high[i]>=High5[i] &&
+   low[i]<=High5[i])
+{
+
+   SellRetestFound=true;
+
+}
+
+
+
+
+//==================================================
+// BUY RETEST CROSSOVER
+//
+// MA High 5 < MA High 10
+//==================================================
+
+
+if(BuyRetestFound &&
+   !BuyCrossover)
+{
+
+
+if(High5[i] < High10[i])
+{
+
+
+BuyCrossover=true;
+
+
+
+string msg=
+"Buy Retest Crossover\n\n"+
+"Symbol : "+_Symbol+
+"\nTimeframe : "+
+EnumToString(_Period)+
+"\nTime : "+
+TimeToString(
+time[i],
+TIME_DATE|TIME_MINUTES
+);
+
+
+
+SendTelegram(msg);
+
+
+}
+
+
+}
+
+
+
+
+//==================================================
+// SELL RETEST CROSSOVER
+//
+// MA Low 5 > MA Low 10
+//==================================================
+
+
+if(SellRetestFound &&
+   !SellCrossover)
+{
+
+
+if(Low5[i] > Low10[i])
+{
+
+
+SellCrossover=true;
+
+
+
+string msg=
+"Sell Retest Crossover\n\n"+
+"Symbol : "+_Symbol+
+"\nTimeframe : "+
+EnumToString(_Period)+
+"\nTime : "+
+TimeToString(
+time[i],
+TIME_DATE|TIME_MINUTES
+);
+
+
+
+SendTelegram(msg);
+
+
+}
+
+
+}
+
+
+
+//==================================================
+// After Buy Crossover
+// Price touches MA High 5
+//==================================================
+
+
+if(BuyCrossover)
+{
+
+
+if(high[i]>=High5[i] &&
+   low[i]<=High5[i])
+{
+
+
+if(time[i]!=LastBuyCross)
+{
+
+
+LastBuyCross=time[i];
+
+
+DrawBuyCrossRectangle(
+i,
+time,
+High5,
+High10
+);
+
+
+string msg=
+"Buy Retest Crossover Retest\n\n"+
+"Symbol : "+_Symbol+
+"\nTimeframe : "+
+EnumToString(_Period)+
+"\nTime : "+
+TimeToString(
+time[i],
+TIME_DATE|TIME_MINUTES
+);
+
+
+
+SendTelegram(msg);
+
+
+}
+
+
+}
+
+
+}
+
+
+
+//==================================================
+// After Sell Crossover
+// Price touches MA Low 5
+//==================================================
+
+
+if(SellCrossover)
+{
+
+
+if(low[i]<=Low5[i] &&
+   high[i]>=Low5[i])
+{
+
+
+if(time[i]!=LastSellCross)
+{
+
+
+LastSellCross=time[i];
+
+
+DrawSellCrossRectangle(
+i,
+time,
+Low5,
+Low10
+);
+
+
+string msg=
+"Sell Retest Crossover Retest\n\n"+
+"Symbol : "+_Symbol+
+"\nTimeframe : "+
+EnumToString(_Period)+
+"\nTime : "+
+TimeToString(
+time[i],
+TIME_DATE|TIME_MINUTES
+);
+
+
+
+SendTelegram(msg);
+
+
+}
+
+
+}
+
+
+}
+
+
+
+return(rates_total);
+
+}
+//==================================================
+// Draw Buy Crossover Rectangle
+//==================================================
+
+void DrawBuyCrossRectangle(
+int index,
+const datetime &time[],
+double &High5[],
+double &High10[]
+)
+{
+
+
+datetime start_time =
+time[index+1];
+
+
+datetime end_time =
+time[index-RectangleForwardCandles];
+
+
+
+string name =
+"BBMA_BUY_CROSS_RETEST_"+
+IntegerToString(time[index]);
+
+
+
+if(ObjectFind(0,name)>=0)
+   return;
+
+
+
+ObjectCreate(
+0,
+name,
+OBJ_RECTANGLE,
+0,
+start_time,
+High5[index],
+end_time,
+High10[index]
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_COLOR,
+clrBlue
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_WIDTH,
+1
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_BACK,
+true
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_FILL,
+true
+);
+
+
+
+}
+
+
+
+//==================================================
+// Draw Sell Crossover Rectangle
+//==================================================
+
+void DrawSellCrossRectangle(
+int index,
+const datetime &time[],
+double &Low5[],
+double &Low10[]
+)
+{
+
+
+datetime start_time =
+time[index+1];
+
+
+datetime end_time =
+time[index-RectangleForwardCandles];
+
+
+
+string name =
+"BBMA_SELL_CROSS_RETEST_"+
+IntegerToString(time[index]);
+
+
+
+if(ObjectFind(0,name)>=0)
+   return;
+
+
+
+ObjectCreate(
+0,
+name,
+OBJ_RECTANGLE,
+0,
+start_time,
+Low5[index],
+end_time,
+Low10[index]
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_COLOR,
+clrOrange
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_WIDTH,
+1
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_BACK,
+true
+);
+
+
+
+ObjectSetInteger(
+0,
+name,
+OBJPROP_FILL,
+true
+);
+
+
+
+}
+//==================================================
+// Telegram Send Function
+//==================================================
+
+void SendTelegram(string text)
+{
+
+
+if(!EnableTelegram)
+   return;
+
+
+
+if(TelegramBotToken=="")
+   return;
+
+
+
+if(TelegramChatID=="")
+   return;
+
+
+
+string url =
+"https://api.telegram.org/bot"+
+TelegramBotToken+
+"/sendMessage";
+
+
+
+string data =
+"chat_id="+
+TelegramChatID+
+"&text="+
+UrlEncode(text);
+
+
+
+char post[];
+char result[];
+
+string headers;
+
+
+
+StringToCharArray(
+data,
+post
+);
+
+
+
+ResetLastError();
+
+
+
+int response =
+WebRequest(
+"POST",
+url,
+headers,
+5000,
+post,
+result,
+headers
+);
+
+
+
+if(response==-1)
+{
+
+Print(
+"Telegram Error : ",
+GetLastError()
+);
+
+}
+
+
+}
+
+
+
+//==================================================
+// URL Encode Function
+//==================================================
+
+string UrlEncode(string text)
+{
+
+string result="";
+
+
+uchar bytes[];
+
+
+StringToCharArray(
+text,
+bytes,
+0,
+WHOLE_ARRAY,
+CP_UTF8
+);
+
+
+
+for(int i=0;i<ArraySize(bytes);i++)
+{
+
+
+uchar c=bytes[i];
+
+
+
+if(
+(c>='A' && c<='Z') ||
+(c>='a' && c<='z') ||
+(c>='0' && c<='9') ||
+c=='-' ||
+c=='_' ||
+c=='.'
+)
+{
+
+result+=CharToString(c);
+
+}
+
+else if(c==' ')
+{
+
+result+="+";
+
+}
+
+else
+{
+
+result+="%";
+result+=StringFormat("%02X",c);
+
+}
+
+
+}
+
+
+return result;
+
+}
+
+
+
+//==================================================
+// Deinitialization
+//==================================================
+
+void OnDeinit(const int reason)
+{
+
+
+if(High5Handle!=INVALID_HANDLE)
+IndicatorRelease(High5Handle);
+
+
+
+if(High10Handle!=INVALID_HANDLE)
+IndicatorRelease(High10Handle);
+
+
+
+if(Low5Handle!=INVALID_HANDLE)
+IndicatorRelease(Low5Handle);
+
+
+
+if(Low10Handle!=INVALID_HANDLE)
+IndicatorRelease(Low10Handle);
+
+
+}
+//+------------------------------------------------------------------+
